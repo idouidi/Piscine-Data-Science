@@ -7,8 +7,6 @@ COMPOSE_FILE   := docker-compose.yml
 ENV_FILE       := .env
 DC             := docker-compose -f $(COMPOSE_FILE) --env-file $(ENV_FILE)
 
-CONTAINER      := postgres_db
-
 # Colors (auto-disabled via: make NO_COLOR=1 <target>)
 ifdef NO_COLOR
   RED    :=
@@ -75,35 +73,40 @@ _check-env:
 #  FULL STACK
 # ---------------------------------------------------------------------------- #
 
-## up    : Start the full stack in daemon mode
+## up : Start stack and wait for all healthchecks
 up: _check-docker _check-env
 	@printf "$(GREEN)[UP]$(RESET)    Starting the stack...\n"
 	@$(DC) up -d --remove-orphans
-	@CID=$$($(DC) ps -q postgres); \
-	test -n "$$CID" || { \
-		printf "$(RED)[ERROR]$(RESET) Unable to find postgres container.\n"; \
-		exit 1; \
-	}; \
-	printf "$(GREEN)[OK]$(RESET)    Stack started. Waiting for postgres healthcheck...\n"; \
-	timeout=60; \
-	while [ $$timeout -gt 0 ]; do \
-		status=$$(docker inspect --format='{{.State.Health.Status}}' $$CID 2>/dev/null); \
-		[ "$$status" = "healthy" ] && { \
-			printf "$(GREEN)[READY]$(RESET) PostgreSQL is up and healthy.\n"; \
-			exit 0; \
-		}; \
-		[ "$$status" = "unhealthy" ] && { \
-			printf "$(RED)[ERROR]$(RESET) PostgreSQL healthcheck failed.\n"; \
+
+	@printf "$(GREEN)[OK]$(RESET)    Stack started. Waiting for healthchecks...\n"; \
+	for CID in $$($(DC) ps -q); do \
+		name=$$(docker inspect --format='{{.Name}}' $$CID 2>/dev/null | sed 's#^/##'); \
+		health=$$(docker inspect --format='{{if .State.Health}}yes{{else}}no{{end}}' $$CID 2>/dev/null); \
+		[ "$$health" = "no" ] && continue; \
+		printf "$(CYAN)[WAIT]$(RESET)  %s\n" "$$name"; \
+		timeout=60; \
+		while [ $$timeout -gt 0 ]; do \
+			status=$$(docker inspect --format='{{.State.Health.Status}}' $$CID 2>/dev/null); \
+			if [ "$$status" = "healthy" ]; then \
+				printf "$(GREEN)[OK]$(RESET)    %s healthy\n" "$$name"; \
+				break; \
+			fi; \
+			if [ "$$status" = "unhealthy" ]; then \
+				printf "$(RED)[ERROR]$(RESET) %s healthcheck failed\n" "$$name"; \
+				docker logs $$CID; \
+				exit 1; \
+			fi; \
+			sleep 1; \
+			timeout=$$((timeout - 1)); \
+		done; \
+		if [ $$timeout -eq 0 ]; then \
+			printf "$(RED)[ERROR]$(RESET) Timeout waiting for %s\n" "$$name"; \
 			docker logs $$CID; \
 			exit 1; \
-		}; \
-		sleep 1; \
-		timeout=$$((timeout - 1)); \
-	done; \
-	printf "$(RED)[ERROR]$(RESET) Timeout waiting for PostgreSQL healthcheck.\n"; \
-	docker logs $$CID; \
-	exit 1
+		fi; \
+	done
 
+	@printf "$(GREEN)[READY]$(RESET) All healthchecks passed.\n"
 ## down  : Stop and remove containers (volumes are kept)
 down: _check-docker
 	@printf "$(YELLOW)[DOWN]$(RESET)  Stopping and removing containers...\n"
@@ -160,8 +163,8 @@ ps: _check-docker
 
 ## postgres : Open a bash shell inside the postgres container
 postgres: _check-docker
-	@printf "$(CYAN)[POSTGRES]$(RESET) Opening bash shell in container '$(CONTAINER)'...\n"
-	@docker exec -it $(CONTAINER) bash
+	@printf "$(CYAN)[POSTGRES]$(RESET) Opening bash shell in container postgres_db...\n"
+	@docker exec -it postgres_db bash
 
 
 # ---------------------------------------------------------------------------- #
@@ -171,21 +174,16 @@ postgres: _check-docker
 
 ## clean    : Fully reset project (containers, volumes, images, networks)
 clean: _check-docker
-	@printf "$(RED)[CLEAN]$(RESET) Full project reset starting...\n"
-
-	@echo "Stopping and removing compose stack..." && \
-	$(DC) down --volumes --remove-orphans --rmi all || true
-
-	@echo "Removing project volumes..." && \
-	docker volume ls -q | grep postgres || true | xargs -r docker volume rm || true
-
-	@echo "Removing project networks..." && \
-	docker network ls -q | grep postgres || true | xargs -r docker network rm || true
-
-	@echo "Removing dangling images..." && \
+	@PROJECT=$$(basename $(PWD)); \
+	echo "Stopping stack..." && \
+	$(DC) down --volumes --remove-orphans --rmi all || true; \
+	echo "Removing volumes..." && \
+	docker volume ls -qf name=$$PROJECT | xargs -r docker volume rm || true; \
+	echo "Removing networks..." && \
+	docker network ls -qf name=$$PROJECT | xargs -r docker network rm || true; \
 	docker image prune -af || true
 
-	@printf "$(GREEN)[OK]$(RESET) Full reset complete.\n"
+	@printf "$(GREEN)[OK]$(RESET) Clean complete.\n"
 
 # ---------------------------------------------------------------------------- #
 #  HELP
