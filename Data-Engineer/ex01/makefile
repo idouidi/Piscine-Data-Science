@@ -1,3 +1,6 @@
+# ==============================================================================
+#  Makefile — PostgreSQL via Docker Compose
+# ==============================================================================
 
 # ---------------------------------------------------------------------------- #
 #  Configuration
@@ -6,6 +9,10 @@
 COMPOSE_FILE   := docker-compose.yml
 ENV_FILE       := .env
 DC             := docker-compose -f $(COMPOSE_FILE) --env-file $(ENV_FILE)
+
+CONTAINER      := postgres_db
+POSTGRES_USER  ?= admin
+POSTGRES_DB    ?= mydb
 
 # Colors (auto-disabled via: make NO_COLOR=1 <target>)
 ifdef NO_COLOR
@@ -43,23 +50,20 @@ all: help
 
 # Ensure docker is installed and the daemon is running, start it if needed (Ubuntu)
 _check-docker:
-	@command -v docker >/dev/null 2>&1 || \
+	@command -v docker > /dev/null 2>&1 || \
 		(printf "$(RED)[ERROR]$(RESET) Docker is not installed.\n" && exit 1)
-
-	@docker info >/dev/null 2>&1 && exit 0; \
-		if sudo docker info >/dev/null 2>&1; then \
-			printf "$(RED)[ERROR]$(RESET) Current user is not allowed to access Docker.\n"; \
-			printf "Run: sudo usermod -aG docker $$USER\n"; \
-			exit 1; \
-		fi; \
-		printf "$(YELLOW)[WARN]$(RESET) Docker daemon is not running, starting it...\n"; \
+	@docker info > /dev/null 2>&1 && exit 0; \
+		printf "$(YELLOW)[WARN]$(RESET)  Docker daemon is not running, starting it...\n"; \
 		sudo systemctl start docker || \
-			(printf "$(RED)[ERROR]$(RESET) Failed to start Docker daemon.\n" && exit 1)
+			(printf "$(RED)[ERROR]$(RESET) Failed to start Docker daemon.\n" && exit 1); \
+		printf "$(GREEN)[OK]$(RESET)    Docker daemon started.\n"
 
 # Ensure .env exists and all required variables are set
 _check-env:
 	@test -f $(ENV_FILE) || \
-		(printf "$(RED)[ERROR]$(RESET) $(ENV_FILE) not found.\n" && exit 1)
+		(printf "$(RED)[ERROR]$(RESET) $(ENV_FILE) not found. Create it with the required variables:\n" && \
+		 printf "  POSTGRES_USER=\n  POSTGRES_PASSWORD=\n  POSTGRES_DB=\n  POSTGRES_PORT=\n  PGADMIN_EMAIL=\n  PGADMIN_PASSWORD=\n  PGADMIN_PORT=\n" && \
+		 exit 1)
 	@. ./$(ENV_FILE) && test -n "$$POSTGRES_USER" || \
 		(printf "$(RED)[ERROR]$(RESET) POSTGRES_USER is not set in $(ENV_FILE)\n" && exit 1)
 	@. ./$(ENV_FILE) && test -n "$$POSTGRES_PASSWORD" || \
@@ -68,45 +72,55 @@ _check-env:
 		(printf "$(RED)[ERROR]$(RESET) POSTGRES_DB is not set in $(ENV_FILE)\n" && exit 1)
 	@. ./$(ENV_FILE) && test -n "$$POSTGRES_PORT" || \
 		(printf "$(RED)[ERROR]$(RESET) POSTGRES_PORT is not set in $(ENV_FILE)\n" && exit 1)
+	@. ./$(ENV_FILE) && test -n "$$PGADMIN_EMAIL" || \
+		(printf "$(RED)[ERROR]$(RESET) PGADMIN_EMAIL is not set in $(ENV_FILE)\n" && exit 1)
+	@. ./$(ENV_FILE) && test -n "$$PGADMIN_PASSWORD" || \
+		(printf "$(RED)[ERROR]$(RESET) PGADMIN_PASSWORD is not set in $(ENV_FILE)\n" && exit 1)
+	@. ./$(ENV_FILE) && test -n "$$PGADMIN_PORT" || \
+		(printf "$(RED)[ERROR]$(RESET) PGADMIN_PORT is not set in $(ENV_FILE)\n" && exit 1)
 
 # ---------------------------------------------------------------------------- #
 #  FULL STACK
 # ---------------------------------------------------------------------------- #
 
-## up : Start stack and wait for all healthchecks
+## up    : Start stack and wait for all healthchecks
 up: _check-docker _check-env
 	@printf "$(GREEN)[UP]$(RESET)    Starting the stack...\n"
 	@$(DC) up -d --remove-orphans
-
-	@printf "$(GREEN)[OK]$(RESET)    Stack started. Waiting for healthchecks...\n"; \
-	for CID in $$($(DC) ps -q); do \
-		name=$$(docker inspect --format='{{.Name}}' $$CID 2>/dev/null | sed 's#^/##'); \
-		health=$$(docker inspect --format='{{if .State.Health}}yes{{else}}no{{end}}' $$CID 2>/dev/null); \
-		[ "$$health" = "no" ] && continue; \
-		printf "$(CYAN)[WAIT]$(RESET)  %s\n" "$$name"; \
+	@printf "$(GREEN)[OK]$(RESET)    Stack started. Waiting for healthchecks...\n"
+	@for CID in $$($(DC) ps -q); do \
+		name=$$(docker inspect --format='{{.Name}}' $$CID | sed 's#^/##'); \
+		has_health=$$(docker inspect --format='{{if .State.Health}}yes{{end}}' $$CID 2>/dev/null); \
+		[ "$$has_health" != "yes" ] && printf "$(YELLOW)[SKIP]$(RESET)  $$name (no healthcheck)\n" && continue; \
+		printf "$(CYAN)[WAIT]$(RESET)  $$name\n"; \
 		timeout=60; \
+		state=pending; \
 		while [ $$timeout -gt 0 ]; do \
 			status=$$(docker inspect --format='{{.State.Health.Status}}' $$CID 2>/dev/null); \
 			if [ "$$status" = "healthy" ]; then \
-				printf "$(GREEN)[OK]$(RESET)    %s healthy\n" "$$name"; \
+				printf "$(GREEN)[OK]$(RESET)    $$name healthy\n"; \
+				state=ok; \
 				break; \
 			fi; \
 			if [ "$$status" = "unhealthy" ]; then \
-				printf "$(RED)[ERROR]$(RESET) %s healthcheck failed\n" "$$name"; \
+				printf "$(RED)[ERROR]$(RESET) $$name healthcheck failed\n"; \
 				docker logs $$CID; \
-				exit 1; \
+				state=fail; \
+				break; \
 			fi; \
 			sleep 1; \
 			timeout=$$((timeout - 1)); \
 		done; \
-		if [ $$timeout -eq 0 ]; then \
-			printf "$(RED)[ERROR]$(RESET) Timeout waiting for %s\n" "$$name"; \
+		if [ "$$state" = "pending" ]; then \
+			printf "$(RED)[ERROR]$(RESET) Timeout waiting for $$name\n"; \
 			docker logs $$CID; \
-			exit 1; \
+			state=fail; \
 		fi; \
+		[ "$$state" = "fail" ] && exit 1; \
+		true; \
 	done
-
 	@printf "$(GREEN)[READY]$(RESET) All healthchecks passed.\n"
+
 ## down  : Stop and remove containers (volumes are kept)
 down: _check-docker
 	@printf "$(YELLOW)[DOWN]$(RESET)  Stopping and removing containers...\n"
@@ -163,27 +177,31 @@ ps: _check-docker
 
 ## postgres : Open a bash shell inside the postgres container
 postgres: _check-docker
-	@printf "$(CYAN)[POSTGRES]$(RESET) Opening bash shell in container postgres_db...\n"
-	@docker exec -it postgres_db bash
+	@printf "$(CYAN)[POSTGRES]$(RESET) Opening bash shell in container '$(CONTAINER)'...\n"
+	@docker exec -it $(CONTAINER) bash
 
+## psql     : Open an interactive psql client inside the container
+psql: _check-docker
+	@printf "$(CYAN)[PSQL]$(RESET)  Connecting to database '$(POSTGRES_DB)' as '$(POSTGRES_USER)'...\n"
+	@if docker exec $(CONTAINER) test -S /var/run/postgresql/.s.PGSQL.5432 2>/dev/null; then \
+		docker exec -it $(CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB); \
+	else \
+		docker exec -it $(CONTAINER) bash -c \
+			"psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)"; \
+	fi
 
 # ---------------------------------------------------------------------------- #
 #  CLEAN
 # ---------------------------------------------------------------------------- #
 
-
-## clean    : Fully reset project (containers, volumes, images, networks)
+## clean    : Remove containers, named volumes and local images
 clean: _check-docker
-	@PROJECT=$$(basename $(PWD)); \
-	echo "Stopping stack..." && \
-	$(DC) down --volumes --remove-orphans --rmi all || true; \
-	echo "Removing volumes..." && \
-	docker volume ls -qf name=$$PROJECT | xargs -r docker volume rm || true; \
-	echo "Removing networks..." && \
-	docker network ls -qf name=$$PROJECT | xargs -r docker network rm || true; \
-	docker image prune -af || true
-
-	@printf "$(GREEN)[OK]$(RESET) Clean complete.\n"
+	@printf "$(RED)[CLEAN]$(RESET) Removing containers, volumes and images...\n"
+	@$(DC) down --volumes --remove-orphans --rmi local 2>/dev/null || true
+	@docker volume rm postgres_data pgadmin_data 2>/dev/null && \
+		printf "$(YELLOW)[CLEAN]$(RESET) Volumes removed.\n" || \
+		printf "$(YELLOW)[CLEAN]$(RESET) Volumes already absent.\n"
+	@printf "$(GREEN)[OK]$(RESET)    Clean complete. All data has been wiped.\n"
 
 # ---------------------------------------------------------------------------- #
 #  HELP
@@ -206,3 +224,5 @@ help:
 	@printf "\n$(YELLOW)Clean:$(RESET)\n"
 	@grep -E '^## clean ' $(MAKEFILE_LIST) | \
 		awk -F ' : ' '{ printf "  $(GREEN)make %-16s$(RESET) %s\n", substr($$1, 4), $$2 }'
+	@printf "\n$(YELLOW)Individual service example:$(RESET)\n"
+	@printf "  $(GREEN)make service-up SVC=postgres$(RESET)\n\n"
