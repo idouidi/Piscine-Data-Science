@@ -72,6 +72,12 @@ _check-env:
 		(printf "$(RED)[ERROR]$(RESET) POSTGRES_DB is not set in $(ENV_FILE)\n" && exit 1)
 	@. ./$(ENV_FILE) && test -n "$$POSTGRES_PORT" || \
 		(printf "$(RED)[ERROR]$(RESET) POSTGRES_PORT is not set in $(ENV_FILE)\n" && exit 1)
+	@. ./$(ENV_FILE) && test -n "$$PGADMIN_EMAIL" || \
+		(printf "$(RED)[ERROR]$(RESET) PGADMIN_EMAIL is not set in $(ENV_FILE)\n" && exit 1)
+	@. ./$(ENV_FILE) && test -n "$$PGADMIN_PASSWORD" || \
+		(printf "$(RED)[ERROR]$(RESET) PGADMIN_PASSWORD is not set in $(ENV_FILE)\n" && exit 1)
+	@. ./$(ENV_FILE) && test -n "$$PGADMIN_PORT" || \
+		(printf "$(RED)[ERROR]$(RESET) PGADMIN_PORT is not set in $(ENV_FILE)\n" && exit 1)
 
 # ---------------------------------------------------------------------------- #
 #  FULL STACK
@@ -174,11 +180,13 @@ postgres: _check-docker
 	@printf "$(CYAN)[POSTGRES]$(RESET) Opening bash shell in container '$(CONTAINER)'...\n"
 	@docker exec -it $(CONTAINER) bash
 
+
 # ---------------------------------------------------------------------------- #
 #  CLEAN
 # ---------------------------------------------------------------------------- #
 
-## clean    : Remove containers, named volumes and local images
+
+## clean    : Remove all containers, volumes and local images
 clean: _check-docker
 	@printf "$(RED)[CLEAN]$(RESET) Stopping and removing all containers...\n"
 	@$(DC) down --volumes --remove-orphans --rmi local 2>/dev/null || true

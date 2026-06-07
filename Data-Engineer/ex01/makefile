@@ -180,27 +180,23 @@ postgres: _check-docker
 	@printf "$(CYAN)[POSTGRES]$(RESET) Opening bash shell in container '$(CONTAINER)'...\n"
 	@docker exec -it $(CONTAINER) bash
 
-## psql     : Open an interactive psql client inside the container
-psql: _check-docker
-	@printf "$(CYAN)[PSQL]$(RESET)  Connecting to database '$(POSTGRES_DB)' as '$(POSTGRES_USER)'...\n"
-	@if docker exec $(CONTAINER) test -S /var/run/postgresql/.s.PGSQL.5432 2>/dev/null; then \
-		docker exec -it $(CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB); \
-	else \
-		docker exec -it $(CONTAINER) bash -c \
-			"psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)"; \
-	fi
-
 # ---------------------------------------------------------------------------- #
 #  CLEAN
 # ---------------------------------------------------------------------------- #
 
-## clean    : Remove containers, named volumes and local images
+## clean    : Remove all containers, volumes and local images
 clean: _check-docker
-	@printf "$(RED)[CLEAN]$(RESET) Removing containers, volumes and images...\n"
+	@printf "$(RED)[CLEAN]$(RESET) Stopping and removing all containers...\n"
 	@$(DC) down --volumes --remove-orphans --rmi local 2>/dev/null || true
-	@docker volume rm postgres_data pgadmin_data 2>/dev/null && \
-		printf "$(YELLOW)[CLEAN]$(RESET) Volumes removed.\n" || \
-		printf "$(YELLOW)[CLEAN]$(RESET) Volumes already absent.\n"
+	@docker ps -aq | xargs -r docker rm -f 2>/dev/null && \
+		printf "$(YELLOW)[CLEAN]$(RESET) All containers removed.\n" || \
+		printf "$(YELLOW)[CLEAN]$(RESET) No containers to remove.\n"
+	@docker volume ls -q | xargs -r docker volume rm 2>/dev/null && \
+		printf "$(YELLOW)[CLEAN]$(RESET) All volumes removed.\n" || \
+		printf "$(YELLOW)[CLEAN]$(RESET) No volumes to remove.\n"
+	@docker network ls --filter type=custom -q | xargs -r docker network rm 2>/dev/null && \
+		printf "$(YELLOW)[CLEAN]$(RESET) All custom networks removed.\n" || \
+		printf "$(YELLOW)[CLEAN]$(RESET) No networks to remove.\n"
 	@printf "$(GREEN)[OK]$(RESET)    Clean complete. All data has been wiped.\n"
 
 # ---------------------------------------------------------------------------- #
