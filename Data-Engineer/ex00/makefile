@@ -180,18 +180,12 @@ postgres: _check-docker
 
 ## clean    : Remove containers, named volumes and local images
 clean: _check-docker
-	@printf "$(RED)[CLEAN]$(RESET) Stopping and removing all containers...\n"
-	@$(DC) down --volumes --remove-orphans --rmi local 2>/dev/null || true
-	@docker ps -aq | xargs -r docker rm -f 2>/dev/null && \
-		printf "$(YELLOW)[CLEAN]$(RESET) All containers removed.\n" || \
-		printf "$(YELLOW)[CLEAN]$(RESET) No containers to remove.\n"
-	@docker volume ls -q | xargs -r docker volume rm 2>/dev/null && \
-		printf "$(YELLOW)[CLEAN]$(RESET) All volumes removed.\n" || \
-		printf "$(YELLOW)[CLEAN]$(RESET) No volumes to remove.\n"
-	@docker network ls --filter type=custom -q | xargs -r docker network rm 2>/dev/null && \
-		printf "$(YELLOW)[CLEAN]$(RESET) All custom networks removed.\n" || \
-		printf "$(YELLOW)[CLEAN]$(RESET) No networks to remove.\n"
-	@printf "$(GREEN)[OK]$(RESET)    Clean complete. All data has been wiped.\n"
+	@printf "$(RED)[CLEAN]$(RESET) Removing all Docker resources...\n"
+	@$(DC) down --volumes --remove-orphans 2>/dev/null || true
+	@docker system prune -a --volumes -f 2>/dev/null && \
+		printf "$(YELLOW)[CLEAN]$(RESET) All Docker resources removed.\n" || \
+		printf "$(YELLOW)[CLEAN]$(RESET) Nothing to remove.\n"
+	@printf "$(GREEN)[OK]$(RESET)    Clean complete.\n"
 
 # ---------------------------------------------------------------------------- #
 #  HELP

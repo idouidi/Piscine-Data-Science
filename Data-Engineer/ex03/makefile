@@ -34,9 +34,9 @@ endif
 # ---------------------------------------------------------------------------- #
 
 .PHONY: all up down start stop re logs ps \
-        service-up service-down postgres psql \
-        clean help \
-        _check-docker _check-env
+		service-up service-down postgres psql \
+		clean help \
+		_check-docker _check-env
 
 # ---------------------------------------------------------------------------- #
 #  Default target
