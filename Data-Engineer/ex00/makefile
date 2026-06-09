@@ -10,9 +10,6 @@ COMPOSE_FILE   := docker-compose.yml
 ENV_FILE       := .env
 DC             := docker-compose -f $(COMPOSE_FILE) --env-file $(ENV_FILE)
 
-CONTAINER      := postgres_db
-POSTGRES_USER  ?= admin
-POSTGRES_DB    ?= mydb
 
 # Colors (auto-disabled via: make NO_COLOR=1 <target>)
 ifdef NO_COLOR
@@ -171,8 +168,8 @@ ps: _check-docker
 
 ## postgres : Open a bash shell inside the postgres container
 postgres: _check-docker
-	@printf "$(CYAN)[POSTGRES]$(RESET) Opening bash shell in container '$(CONTAINER)'...\n"
-	@docker exec -it $(CONTAINER) bash
+	@printf "$(CYAN)[POSTGRES]$(RESET) Opening bash shell in container 'postgres'...\n"
+	@docker exec -it postgres bash
 
 # ---------------------------------------------------------------------------- #
 #  CLEAN

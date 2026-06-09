@@ -1,57 +1,45 @@
 #!/bin/bash
 set -e
 
-CSV_DIR="/data"
+CSV_FILE="/data/items/items.csv"
 
-if [ ! -d "$CSV_DIR" ]; then
-    echo "[INIT] No data directory found at $CSV_DIR, skipping import."
+if [ ! -f "$CSV_FILE" ]; then
+    echo "[INIT] No CSV file found at $CSV_FILE, skipping import."
     exit 0
 fi
 
-for CSV_FILE in "$CSV_DIR"/*.csv; do
+echo "[INIT] Creating table items and importing $CSV_FILE..."
 
-    # skip if no csv files found (glob returns literal string)
-    [ -f "$CSV_FILE" ] || continue
+psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" << SQL
 
-    # extract table name from filename without extension
-    TABLE_NAME=$(basename "$CSV_FILE" .csv)
-
-    echo "[INIT] Creating table '$TABLE_NAME' and importing $CSV_FILE..."
-
-    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" << SQL
-
-CREATE TABLE IF NOT EXISTS $TABLE_NAME (
+CREATE TABLE IF NOT EXISTS items (
     product_id    INTEGER,
     category_id   BIGINT,
     category_code VARCHAR(255),
     brand         VARCHAR(255)
 );
 
-CREATE TEMP TABLE ${TABLE_NAME}_tmp (
+CREATE TEMP TABLE items_tmp (
     product_id    TEXT,
     category_id   TEXT,
     category_code TEXT,
     brand         TEXT
 );
 
-COPY ${TABLE_NAME}_tmp
+COPY items_tmp
 FROM '$CSV_FILE'
 WITH (FORMAT csv, HEADER true, DELIMITER ',');
 
-INSERT INTO $TABLE_NAME
+INSERT INTO items
 SELECT
     TRIM(product_id)::INTEGER,
     TRIM(category_id)::BIGINT,
     NULLIF(TRIM(category_code), ''),
     NULLIF(TRIM(brand), '')
-FROM ${TABLE_NAME}_tmp;
+FROM items_tmp;
 
-DROP TABLE ${TABLE_NAME}_tmp;
+DROP TABLE items_tmp;
 
 SQL
 
-    echo "[INIT] '$TABLE_NAME' imported successfully."
-
-done
-
-echo "[INIT] All CSV files imported."
+echo "[INIT] items imported successfully."
