@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CSV_DIR="/data/items"
+CSV_DIR="/data/item"
 
 if [ ! -d "$CSV_DIR" ]; then
     echo "[INIT] No data directory found at $CSV_DIR, skipping import."

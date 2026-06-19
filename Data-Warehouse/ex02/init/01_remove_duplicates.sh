@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-    echo "[INIT] removing duplicates from 'customer' table..."
+    echo "[INIT] removing duplicates from 'customers' table..."
 
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" << SQL
 
@@ -13,10 +13,10 @@ WITH tmp AS (
             PARTITION BY event_type, product_id, price, user_id, user_session
             ORDER BY event_time
         ) AS prev_time
-    FROM customer
+    FROM customers
 )
 
-DELETE FROM customer c
+DELETE FROM customers c
 USING tmp
 WHERE c.ctid = tmp.ctid
   AND tmp.prev_time IS NOT NULL

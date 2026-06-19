@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CSV_DIR="/data/customers"
+CSV_DIR="/data/customer"
 
 if [ ! -d "$CSV_DIR" ]; then
     echo "[INIT] No data directory found at $CSV_DIR, skipping import."
@@ -12,7 +12,7 @@ echo "[INIT] Creating customers table if not exists..."
 
 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
 
-CREATE TABLE IF NOT EXISTS customer (
+CREATE TABLE IF NOT EXISTS customers (
     event_time   TIMESTAMPTZ,
     event_type   VARCHAR(50),
     product_id   INTEGER,
